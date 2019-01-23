@@ -1,0 +1,119 @@
+# This is an example circle ci config that works well with the Git Flow workflow
+# where develop is the main development branch and master represents the production branch
+
+# Git Flow workflow:
+#   develop -> staging
+#   master -> production
+
+version: 2.1
+jobs:
+
+    unit-tests:
+        machine: true
+        steps:
+            - checkout
+            - run: echo "Running unit tests"
+
+    integration-tests:
+        machine: true
+        steps:
+            - checkout
+            - run: echo "Running integration tests"
+
+    stress-tests:
+        machine: true
+        steps:
+            - checkout
+            - run: echo "Running stress tests"
+    
+    deploy-staging:
+        machine: true
+        environment:
+            FOO: "boo"
+
+        steps:
+            - checkout
+            - run:
+                name: Setup the TAG env var to use the commit SHA1 ID
+                command: |
+                    echo 'export TAG=$(echo $CIRCLE_SHA1 | cut -c 1-8)' >> $BASH_ENV
+                    source $BASH_ENV
+            - run:
+                name: Deploy to staging
+                command: echo "Deploying to staging"
+
+    deploy-prod:
+        machine: true
+        environment:
+            FOO: "boo"
+
+        steps:
+            - checkout
+            - run:
+                name: Setup the TAG env var to use the release number
+                command: |
+                    echo 'export TAG=$(echo $CIRCLE_TAG)' >> $BASH_ENV
+                    source $BASH_ENV
+            - run:
+                name: Deploy to staging
+                command: echo "Deploying to production"
+
+workflows:
+  version: 2
+  workflow:
+    jobs:
+        # Run the unit tests
+        - unit-tests:
+            filters:
+                tags:
+                    only: /^[0-9]+.[0-9]+.[0-9]+$/ # Regex that match a release number like this 4.9.12
+
+        # Run the integration tests
+        - integration-tests:    
+            filters:
+                tags:
+                    only: /^[0-9]+.[0-9]+.[0-9]+$/
+
+        # Run the stress tests
+        - stress-tests:
+            filters:
+                branches:
+                    only:
+                        - master
+                tags:
+                    only: /^[0-9]+.[0-9]+.[0-9]+$/
+
+        # Hold before deploying to production
+        # Production is only triggerd on releases
+        - hold:
+            type: approval
+            requires:
+                - unit-tests
+                - integration-tests
+                - stress-tests
+            filters:
+                branches:
+                    ignore: /.*/
+                tags:
+                    only: /^[0-9]+.[0-9]+.[0-9]+$/
+
+        # After confirmation from the hold job deploy the to production
+        # with the release number
+        - deploy-prod:
+            requires:
+                - hold
+            filters:
+                branches:
+                    ignore: /.*/
+                tags:
+                    only: /^[0-9]+.[0-9]+.[0-9]+$/
+
+        # Deploy to staging when new commits on develop
+        - deploy-staging:
+            requires:
+                - unit-tests
+                - integration-tests
+                - stress-tests
+            filters:
+                branches:
+                    only: develop
